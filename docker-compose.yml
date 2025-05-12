@@ -1,38 +1,57 @@
+
 # docker-compose.yml (for LOCAL development on EC2)
-version: '3.8'
+version: '3.8' # You can remove this line as the WARN message suggested
 
 services:
   db:
-    image: postgres:15 # Use a specific version
+    image: postgres:15
     container_name: local_postgres_gamedb
     restart: always
     environment:
-      POSTGRES_USER: ${DB_USER_LOCAL:-localuser}    # Reads from .env or defaults
+      POSTGRES_USER: ${DB_USER_LOCAL:-localuser}
       POSTGRES_PASSWORD: ${DB_PASSWORD_LOCAL:-localpass}
       POSTGRES_DB: ${DB_NAME_LOCAL:-gamedb_local}
     ports:
-      - "5432:5432" # Expose DB port to the EC2 host
+      - "5432:5432"
     volumes:
-      - postgres_data_local:/var/lib/postgresql/data # Persistent data
+      - postgres_data_local:/var/lib/postgresql/data
 
-  etl: # Service to run the ETL script
+  etl:
     build:
       context: .
-      dockerfile: Dockerfile.etl # You'll create this next
+      dockerfile: Dockerfile.etl
     container_name: local_etl_runner
     depends_on:
       - db
-    environment: # Pass DB connection details to the ETL container
-      # These will be used by etl.py if it reads from os.getenv
-      DB_HOST_LOCAL: db       # Service name of the database container
+    environment:
+      DB_HOST_LOCAL: db
       DB_NAME_LOCAL: ${DB_NAME_LOCAL:-gamedb_local}
       DB_USER_LOCAL: ${DB_USER_LOCAL:-localuser}
       DB_PASSWORD_LOCAL: ${DB_PASSWORD_LOCAL:-localpass}
       DB_PORT_LOCAL: '5432'
     volumes:
-      - ./src:/app/src     # Mount your src code into the container
-      - ./data:/app/data   # Mount your data folder into the container
-    # command: ["python", "src/etl.py"] # Optional: define default command if Dockerfile doesn't have CMD
+      - ./src:/app/src
+      - ./data:/app/data
+
+  # --- ADD DASHBOARD SERVICE ---
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: local_dashboard
+    depends_on:
+      - db # Depends on the database service
+    ports:
+      - "8501:8501" # Map host port 8501 to container port 8501
+    environment:
+      # Pass connection details (it should read these)
+      DB_HOST_LOCAL: db
+      DB_NAME_LOCAL: ${DB_NAME_LOCAL:-gamedb_local}
+      DB_USER_LOCAL: ${DB_USER_LOCAL:-localuser}
+      DB_PASSWORD_LOCAL: ${DB_PASSWORD_LOCAL:-localpass}
+      DB_PORT_LOCAL: '5432'
+    volumes:
+      - ./src:/app/src # Mount source code for potential live updates if streamlit supports it
 
 volumes:
-  postgres_data_local: # Defines the named volume for db persistence
+  postgres_data_local:

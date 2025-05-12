@@ -1,0 +1,23 @@
+
+# Dockerfile.dashboard
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Copy requirements first for caching
+COPY requirements.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source code
+COPY ./src /app/src
+
+# Expose the default Streamlit port
+EXPOSE 8501
+
+# Healthcheck (Optional but recommended for production later)
+# HEALTHCHECK --interval=15s --timeout=5s --start-period=30s \
+#   CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+
+# Command to run the Streamlit dashboard
+# Use --server.address=0.0.0.0 to allow connections from outside the container
+CMD ["streamlit", "run", "src/dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]
