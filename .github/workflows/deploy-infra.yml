@@ -4,7 +4,7 @@ name: Deploy Infrastructure (CloudFormation)
 on:
   push:
     branches:
-      - main     # Trigger for production infrastructure changes
+      - main     # Trigger for production infrastructure changes.
       - develop  # Trigger for test infrastructure changes
     paths:
       - 'cloudformation/**' # Only run if files in cloudformation/ directory change
