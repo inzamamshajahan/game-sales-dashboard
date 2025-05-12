@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib60/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environment
+.venv/
+env/
+venv/
+
+# Environment variables
+.env*
+!.env.example
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# CloudFormation/Terraform (though you might want to commit .template files if they are outputs)
+# .terraform/
+# *.tfstate
+# *.tfstate.backup
+# *.template # If these are outputs of validation, not source
+
+# Data files (if large or sensitive, consider if they should be in git)
+# data/*.csv # If your actual data CSVs are large/private and not sample data
