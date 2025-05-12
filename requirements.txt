@@ -1,0 +1,5 @@
+pandas  # For reading CSV and data manipulation in ETL
+psycopg2-binary # PostgreSQL adapter for Python
+python-dotenv # For loading .env files (useful for local config)
+boto3 # For AWS SDK (Secrets Manager, ECR, etc. - will be used later)
+streamlit # For the dashboard

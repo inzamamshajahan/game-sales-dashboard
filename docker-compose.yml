@@ -1,0 +1,38 @@
+# docker-compose.yml (for LOCAL development on EC2)
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15 # Use a specific version
+    container_name: local_postgres_gamedb
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER_LOCAL:-localuser}    # Reads from .env or defaults
+      POSTGRES_PASSWORD: ${DB_PASSWORD_LOCAL:-localpass}
+      POSTGRES_DB: ${DB_NAME_LOCAL:-gamedb_local}
+    ports:
+      - "5432:5432" # Expose DB port to the EC2 host
+    volumes:
+      - postgres_data_local:/var/lib/postgresql/data # Persistent data
+
+  etl: # Service to run the ETL script
+    build:
+      context: .
+      dockerfile: Dockerfile.etl # You'll create this next
+    container_name: local_etl_runner
+    depends_on:
+      - db
+    environment: # Pass DB connection details to the ETL container
+      # These will be used by etl.py if it reads from os.getenv
+      DB_HOST_LOCAL: db       # Service name of the database container
+      DB_NAME_LOCAL: ${DB_NAME_LOCAL:-gamedb_local}
+      DB_USER_LOCAL: ${DB_USER_LOCAL:-localuser}
+      DB_PASSWORD_LOCAL: ${DB_PASSWORD_LOCAL:-localpass}
+      DB_PORT_LOCAL: '5432'
+    volumes:
+      - ./src:/app/src     # Mount your src code into the container
+      - ./data:/app/data   # Mount your data folder into the container
+    # command: ["python", "src/etl.py"] # Optional: define default command if Dockerfile doesn't have CMD
+
+volumes:
+  postgres_data_local: # Defines the named volume for db persistence

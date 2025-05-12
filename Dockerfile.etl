@@ -1,0 +1,21 @@
+# Dockerfile.etl
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Copy only requirements to leverage Docker cache
+COPY requirements.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Create the target data directory inside the container
+RUN mkdir -p /app/data
+
+# Copy the rest of the application code
+COPY ./src ./src
+# --- CHANGE HERE ---
+# Copy only the specific CSV file into the created directory
+COPY ./data/game_sales_data.csv /app/data/game_sales_data.csv
+# --- END CHANGE ---
+
+# Command to run the ETL script
+CMD ["python", "src/etl.py"]
