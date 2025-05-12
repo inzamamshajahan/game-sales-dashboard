@@ -1,0 +1,22 @@
+[
+  {
+    "ParameterKey": "EnvironmentName",
+    "ParameterValue": "test"
+  },
+  {
+    "ParameterKey": "ECRRepoName",
+    "ParameterValue": "game-sales-dashboard-test"
+  },
+  {
+    "ParameterKey": "SecretsManagerBaseName",
+    "ParameterValue": "app/db-credentials"
+  },
+  {
+    "ParameterKey": "InstanceTypeTest",
+    "ParameterValue": "t3.micro"
+  },
+  {
+    "ParameterKey": "GitHubOrgRepo",
+    "ParameterValue": "inzamamshajahan/game-sales-dashboard"
+  }
+]

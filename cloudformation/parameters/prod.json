@@ -1,0 +1,22 @@
+[
+  {
+    "ParameterKey": "EnvironmentName",
+    "ParameterValue": "prod"
+  },
+  {
+    "ParameterKey": "ECRRepoName",
+    "ParameterValue": "game-sales-dashboard-prod"
+  },
+  {
+    "ParameterKey": "SecretsManagerBaseName",
+    "ParameterValue": "app/db-credentials"
+  },
+  {
+    "ParameterKey": "InstanceTypeProd",
+    "ParameterValue": "t3.small"
+  },
+  {
+    "ParameterKey": "GitHubOrgRepo",
+    "ParameterValue": "inzamamshajahan/game-sales-dashboard"
+  }
+]

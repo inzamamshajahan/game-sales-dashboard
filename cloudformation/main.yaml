@@ -1,0 +1,347 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Infrastructure for Game Sales Dashboard (EC2-Hosted DB) for test/prod environments.
+  Includes VPC, EC2, ECR, Secrets Manager, IAM Roles.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: The environment name (e.g., test, prod). Used for naming resources.
+    AllowedValues: [test, prod]
+    Default: test
+  ProjectName:
+    Type: String
+    Default: game-sales-dashboard
+    Description: Base name for resources.
+  ECRRepoName:
+    Type: String
+    Description: Name for the ECR repository (environment suffix often added via parameter file).
+    Default: game-sales-dashboard-repo # Will be overridden by parameter file
+  SecretsManagerBaseName:
+    Type: String
+    Default: app/db-credentials
+    Description: Base path for the Secrets Manager secret (env prefix added in resource name).
+  DbUser:
+    Type: String
+    Description: Database username (stored in Secrets Manager).
+    NoEcho: true
+  DbPassword:
+    Type: String
+    Description: Database password (stored in Secrets Manager). MUST BE PROVIDED via parameters/secrets.
+    NoEcho: true
+    MinLength: 8
+  DbName:
+    Type: String
+    Default: gamedb
+    Description: Database name (stored in Secrets Manager).
+  InstanceTypeTest:
+    Type: String
+    Default: t3.micro
+    Description: EC2 instance type for Test environment.
+  InstanceTypeProd:
+    Type: String
+    Default: t3.small # Example: Larger for Prod
+    Description: EC2 instance type for Prod environment.
+  AmiId: # !!! IMPORTANT: REPLACE WITH LATEST AMAZON LINUX 2023 AMI ID FOR YOUR REGION !!!
+    Type: AWS::EC2::Image::Id
+    Description: AMI ID for EC2 instance (Amazon Linux 2023).
+    # Example for us-east-1 (N. Virginia) - CHECK AND UPDATE FOR YOUR REGION
+    Default: ami-053b0d53c279acc90
+  SSHKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 Key Pair for SSH access (must exist in the region).
+  MyIP:
+    Type: String
+    Description: Your public IP address for SSH access to EC2 (CIDR format, e.g., 1.2.3.4/32).
+  GitHubOrgRepo: # e.g., your-username/your-repo-name
+     Type: String
+     Description: Your GitHub Organization/Username and Repository name (e.g., MyUser/MyRepo).
+
+Conditions:
+  IsProdEnv: !Equals [!Ref EnvironmentName, prod]
+  CreateTestResources: !Equals [!Ref EnvironmentName, test]
+  CreateProdResources: !Equals [!Ref EnvironmentName, prod]
+
+Resources:
+  # --- Networking ---
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-vpc-${EnvironmentName}
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true # Important for public accessibility
+      AvailabilityZone: !Select [ 0, !GetAZs '' ] # Selects the first AZ in the region
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-public-subnet-${EnvironmentName}
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-igw-${EnvironmentName}
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-public-rt-${EnvironmentName}
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${ProjectName}-sg-${EnvironmentName}
+      GroupDescription: Allow HTTP (Dashboard) and SSH
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref MyIP # Restrict SSH to your IP
+          Description: SSH from My IP
+        - IpProtocol: tcp
+          FromPort: 8501 # Streamlit Dashboard Port
+          ToPort: 8501
+          CidrIp: 0.0.0.0/0 # Allow public access to dashboard (consider restricting for prod)
+          Description: HTTP for Streamlit Dashboard
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-sg-${EnvironmentName}
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # --- ECR Repository ---
+  AppECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref ECRRepoName # Full name like 'game-sales-dashboard-test' from param file
+      ImageTagMutability: MUTABLE
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ECRRepoName} # Use the direct ECRRepoName from params
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # --- Secrets Manager Secret (DB Credentials & Hostname) ---
+  DbCredentialsSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${EnvironmentName}/${SecretsManagerBaseName} # e.g., test/app/db-credentials
+      Description: !Sub DB credentials for ${ProjectName} (${EnvironmentName}) - EC2 Hosted DB
+      SecretString: !Sub
+        - '{"DB_USER":"${User}","DB_PASSWORD":"${Password}","DB_NAME":"${DbNameParam}","DB_HOST":"db","DB_PORT":"5432"}'
+        - User: !Ref DbUser
+          Password: !Ref DbPassword
+          DbNameParam: !Ref DbName # Use the DbName parameter directly
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-db-creds-secret-${EnvironmentName}
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # --- IAM Roles (OIDC for GitHub, EC2 Instance Profile) ---
+  GitHubActionsRole: # Role assumed by GitHub Actions Infra & CI/CD workflows
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-github-actions-role-${EnvironmentName}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                "token.actions.githubusercontent.com:aud": sts.amazonaws.com
+              StringLike: # Ensure this matches your GitHub org/repo and branches
+                "token.actions.githubusercontent.com:sub":
+                  - !Sub repo:${GitHubOrgRepo}:ref/refs/heads/main
+                  - !Sub repo:${GitHubOrgRepo}:ref/refs/heads/develop
+                  - !Sub repo:${GitHubOrgRepo}:pull_request # Optional: for PR triggered workflows
+      Policies:
+        - PolicyName: !Sub CICDPermissions-${EnvironmentName}
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow # ECR Permissions for CI to push images
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:DescribeRepositories
+                Resource: !GetAtt AppECRRepository.Arn
+              - Effect: Allow # Required globally by ECR login action
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow # Needed by CD job to read stack outputs (EC2 DNS)
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*
+              # Add other permissions for CloudFormation Role if this role also deploys CFN
+              # - cloudformation:*
+              # - iam:PassRole (if CFN creates roles)
+
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-ec2-instance-role-${EnvironmentName}
+      AssumeRolePolicyDocument:
+         Version: '2012-10-17'
+         Statement: [{Effect: Allow, Principal: {Service: ec2.amazonaws.com}, Action: sts:AssumeRole}]
+      Policies:
+        - PolicyName: !Sub AppInstancePermissions-${EnvironmentName}
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow # Allow EC2 to read its specific DB secret
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref DbCredentialsSecret
+              - Effect: Allow # Allow EC2 to pull images from its specific ECR repo
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:DescribeRepositories # Added for BatchGetImage
+                  - ecr:DescribeImages
+                  - ecr:BatchGetImage
+                Resource: !GetAtt AppECRRepository.Arn
+              - Effect: Allow # Required globally by ECR login action
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${ProjectName}-ec2-profile-${EnvironmentName}
+      Roles: [!Ref EC2InstanceRole]
+
+  # --- EC2 Instance ---
+  AppServerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !If [IsProdEnv, !Ref InstanceTypeProd, !Ref InstanceTypeTest]
+      ImageId: !Ref AmiId
+      KeyName: !Ref SSHKeyName
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      BlockDeviceMappings: # Optional: Increase root volume size if needed
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20 # GB
+            VolumeType: gp3
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: '0'
+          GroupSet: [!Ref AppSecurityGroup]
+          SubnetId: !Ref PublicSubnet
+      UserData: !Base64 |
+        #!/bin/bash -xe
+        # Update packages
+        dnf update -y
+
+        # Install Git (AL2023 should have it, but ensure)
+        dnf install git -y
+
+        # Install Docker
+        dnf install docker -y
+        systemctl start docker
+        systemctl enable docker
+        usermod -a -G docker ec2-user # For Amazon Linux, user is ec2-user
+
+        # Install Docker Compose V2 Plugin (Manual installation as dnf package might not be available)
+        # Create plugin directory
+        DOCKER_CONFIG_DIR=/home/ec2-user/.docker # Ensure this is the correct home for ec2-user
+        mkdir -p $DOCKER_CONFIG_DIR/cli-plugins
+        # Get latest version tag for Docker Compose
+        LATEST_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        if [ -z "$LATEST_COMPOSE_VERSION" ]; then
+            # Fallback to a known recent version if API fails
+            LATEST_COMPOSE_VERSION="v2.27.0" # Or check GitHub for current latest
+        fi
+        # Download Docker Compose binary
+        curl -SL https://github.com/docker/compose/releases/download/${LATEST_COMPOSE_VERSION}/docker-compose-linux-x86_64 -o $DOCKER_CONFIG_DIR/cli-plugins/docker-compose
+        chmod +x $DOCKER_CONFIG_DIR/cli-plugins/docker-compose
+        chown ec2-user:ec2-user -R $DOCKER_CONFIG_DIR # Ensure ec2-user owns it
+
+        # Install AWS CLI v2
+        dnf install unzip -y
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip awscliv2.zip
+        ./aws/install
+        rm -rf aws awscliv2.zip
+
+        # Install Python3 pip and other useful tools if needed (AL2023 might have pip with python3)
+        dnf install python3-pip jq -y
+
+        # Create app directories
+        mkdir -p /home/ec2-user/app
+        mkdir -p /home/ec2-user/postgres-data
+        chown -R ec2-user:ec2-user /home/ec2-user/app
+        chown -R ec2-user:ec2-user /home/ec2-user/postgres-data
+
+        # Signal completion (optional)
+        echo "User data script completed successfully." > /var/log/user-data-status.log
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-instance-${EnvironmentName}
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+Outputs:
+  ECRRepositoryUri:
+    Description: The URI of the ECR repository for this environment
+    Value: !GetAtt AppECRRepository.RepositoryUri
+  EC2InstancePublicDns:
+    Description: Public DNS name of the EC2 instance for this environment
+    Value: !GetAtt AppServerInstance.PublicDnsName
+  EC2InstancePublicIp:
+    Description: Public IP address of the EC2 instance for this environment
+    Value: !GetAtt AppServerInstance.PublicIp
+  SecretsManagerArn:
+    Description: ARN of the Secrets Manager secret for this environment
+    Value: !Ref DbCredentialsSecret
+  GitHubActionsRoleArn:
+    Description: ARN of the IAM role for GitHub Actions CI/CD for THIS environment
+    Value: !GetAtt GitHubActionsRole.Arn
