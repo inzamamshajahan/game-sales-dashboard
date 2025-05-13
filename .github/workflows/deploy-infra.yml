@@ -75,11 +75,27 @@ jobs:
             CF_ROLE_ARN="${{ secrets.TEST_AWS_CLOUDFORMATION_ROLE_ARN }}"
             STACK_NAME="${STACK_NAME_PREFIX}-test-stack"
             SSH_KEY_NAME_SECRET="${{ secrets.TEST_AWS_EC2_SSH_KEY_NAME }}"
-            MY_IP_SECRET="${{ secrets.TEST_AWS_MY_IP_CIDR }}"
+            MY_IP_SECRET="${{ secrets.TEST_AWS_MY_IP_CIDR }}" # This is where it tries to get the value
           else
             echo "::error::Invalid environment name: $ENV_NAME"
             exit 1
           fi
+
+          # ---- START: ADD DEBUGGING LINES HERE ----
+          echo "Debug: ENV_NAME is '$ENV_NAME'"
+          echo "Debug: PARAM_FILE is '$PARAM_FILE'"
+          echo "Debug: CF_ROLE_ARN is '$CF_ROLE_ARN'" # Will be masked if set
+          echo "Debug: STACK_NAME is '$STACK_NAME'"
+          echo "Debug: SSH_KEY_NAME_SECRET (variable value) is '$SSH_KEY_NAME_SECRET'" # Will be masked if set
+          echo "Debug: MY_IP_SECRET (variable value) is '$MY_IP_SECRET'" # Check if this is empty
+          
+          # Check if the secrets themselves are accessible (values will be masked by GitHub)
+          echo "Debug: secrets.TEST_AWS_MY_IP_CIDR raw value is '${{ secrets.TEST_AWS_MY_IP_CIDR }}'"
+          echo "Debug: secrets.TEST_AWS_EC2_SSH_KEY_NAME raw value is '${{ secrets.TEST_AWS_EC2_SSH_KEY_NAME }}'"
+          echo "Debug: secrets.DB_USER raw value is '${{ secrets.DB_USER }}'"
+          # For passwords, just check if they are set to avoid accidentally logging them, even if masked
+          if [ -n "${{ secrets.DB_PASSWORD }}" ]; then echo "Debug: secrets.DB_PASSWORD is set."; else echo "Debug: secrets.DB_PASSWORD is NOT set or empty."; fi
+          # ---- END: ADD DEBUGGING LINES HERE ----
 
           echo "environment_name=$ENV_NAME" >> $GITHUB_OUTPUT
           echo "param_file=$PARAM_FILE" >> $GITHUB_OUTPUT

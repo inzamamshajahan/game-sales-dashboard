@@ -52,6 +52,7 @@ Parameters:
     Description: Name of an existing EC2 Key Pair for SSH access (must exist in the region).
   MyIP:
     Type: String
+    Default: 3.80.50.7/32
     Description: Your public IP address for SSH access to EC2 (CIDR format, e.g., 1.2.3.4/32).
   GitHubOrgRepo: # e.g., your-username/your-repo-name
      Type: String

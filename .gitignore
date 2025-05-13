@@ -48,3 +48,6 @@ Thumbs.db
 
 # Data files (if large or sensitive, consider if they should be in git)
 # data/*.csv # If your actual data CSVs are large/private and not sample data
+
+# other
+learn123/
